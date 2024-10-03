@@ -13,6 +13,13 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -26,12 +33,19 @@ const MEMORY_SECTIONS = [
   { start: 0x400000000, end: 0x4FFFFFFFF, name: "Program input parameters" },
 ]
 
-const PROGRAM_INPUT_REGIONS = [
-  { name: "Number of accounts", size: 8, color: "bg-blue-400" },
+const PROGRAM_REGIONS = [
+  { name: "Number of accounts", size: 8, color: "bg-blue-400", isPadding: false, subRegions: [] },
+  { name: "Instruction data size", size: 8, color: "bg-cyan-400", isPadding: false, subRegions: [] },
+  { name: "Instruction data", size: 32, color: "bg-lime-400", isDynamic: true, isPadding: false, subRegions: [] },
+  { name: "Program ID", size: 32, color: "bg-amber-400", isPadding: false, subRegions: [] },
+]
+
+const ACCOUNT_REGIONS = [
   { 
     name: "Account Flags", 
     size: 4, 
     color: "bg-green-400",
+    isPadding: false,
     subRegions: [
       { name: "Is Signer", size: 1, color: "bg-green-300" },
       { name: "Is Writable", size: 1, color: "bg-green-400" },
@@ -39,24 +53,22 @@ const PROGRAM_INPUT_REGIONS = [
       { name: "Is Duplicate", size: 1, color: "bg-green-600" },
     ]
   },
-  { name: "Padding 1", size: 4, color: "bg-gray-400", isPadding: true },
+  { name: "Padding 1", size: 4, color: "bg-gray-400", isPadding: true, subRegions: [] },
   { 
     name: "Public keys", 
     size: 64, 
     color: "bg-purple-400",
+    isPadding: false,
     subRegions: [
       { name: "Account Pub Key", size: 32, color: "bg-indigo-400" },
       { name: "Account Owner Pub Key", size: 32, color: "bg-violet-400" },
     ]
   },
-  { name: "Lamports", size: 8, color: "bg-red-400" },
-  { name: "Account data size", size: 8, color: "bg-indigo-400" },
-  { name: "Account data", size: 32, color: "bg-pink-400", isDynamic: true },
-  { name: "Realloc padding", size: 10240, color: "bg-gray-500", isPadding: true },
-  { name: "Rent epoch", size: 8, color: "bg-teal-400" },
-  { name: "Instruction data size", size: 8, color: "bg-cyan-400" },
-  { name: "Instruction data", size: 32, color: "bg-lime-400", isDynamic: true },
-  { name: "Program ID", size: 32, color: "bg-amber-400" },
+  { name: "Lamports", size: 8, color: "bg-red-400", isPadding: false, subRegions: [] },
+  { name: "Account data size", size: 8, color: "bg-indigo-400", isPadding: false, subRegions: [] },
+  { name: "Account data", size: 32, color: "bg-pink-400", isDynamic: true, isPadding: false, subRegions: [] },
+  { name: "Realloc padding", size: 10240, color: "bg-gray-500", isPadding: true, subRegions: [] },
+  { name: "Rent epoch", size: 8, color: "bg-teal-400", isPadding: false, subRegions: [] },
 ]
 
 const COLS = 16
@@ -79,26 +91,46 @@ type Region = {
   name: string
   size: number
   color: string
-  subRegions?: SubRegion[]
+  subRegions: SubRegion[]
   isDynamic?: boolean
-  isPadding?: boolean
+  isPadding: boolean
 }
 
-export default function MemoryViewer() {
+export default function Component() {
   const [selectedSection, setSelectedSection] = useState<MemorySection>(MEMORY_SECTIONS[3])
   const [focusedRegion, setFocusedRegion] = useState<string | null>(null)
-  const [accountDataSize, setAccountDataSize] = useState<number>(32)
+  const [accountDataSizes, setAccountDataSizes] = useState<number[]>([32])
   const [instructionDataSize, setInstructionDataSize] = useState<number>(32)
   const [numberOfAccounts, setNumberOfAccounts] = useState<number>(1)
+  const [selectedView, setSelectedView] = useState<string>("Program")
   const listRef = useRef<List>(null)
 
   const programInputRegions = useMemo(() => {
-    return PROGRAM_INPUT_REGIONS.map(region => 
-      region.name === "Account data" ? { ...region, size: accountDataSize } :
-      region.name === "Instruction data" ? { ...region, size: instructionDataSize } :
-      region
+    const accountRegions = Array(numberOfAccounts).fill(null).flatMap((_, index) => 
+      ACCOUNT_REGIONS.map(region => ({
+        ...region,
+        name: `Account ${index + 1}: ${region.name}`,
+        size: region.name === "Account data" ? accountDataSizes[index] || 32 : region.size
+      }))
     )
-  }, [accountDataSize, instructionDataSize])
+    
+    return [
+      ...PROGRAM_REGIONS.slice(0, 1),
+      ...accountRegions,
+      ...PROGRAM_REGIONS.slice(1).map(region => 
+        region.name === "Instruction data" ? { ...region, size: instructionDataSize } : region
+      )
+    ]
+  }, [numberOfAccounts, accountDataSizes, instructionDataSize])
+
+  const displayedRegions = useMemo(() => {
+    if (selectedView === "Program") {
+      return programInputRegions.filter(region => !region.name.startsWith("Account"))
+    } else {
+      const accountNumber = parseInt(selectedView.replace("Account ", ""))
+      return programInputRegions.filter(region => region.name.startsWith(`Account ${accountNumber}:`))
+    }
+  }, [selectedView, programInputRegions])
 
   const totalNamedRegionSize = useMemo(() => 
     programInputRegions.reduce((sum, region) => sum + region.size, 0),
@@ -135,10 +167,11 @@ export default function MemoryViewer() {
 
   const getMemoryValue = useCallback((index: number) => {
     if (selectedSection.name === "Program input parameters") {
-      if (focusedRegion === "Account data size") {
-        const offset = getRegionOffset("Account data size")
+      if (focusedRegion?.includes("Account data size")) {
+        const accountIndex = parseInt(focusedRegion.split(':')[0].split(' ')[1]) - 1
+        const offset = getRegionOffset(`Account ${accountIndex + 1}: Account data size`)
         if (index >= offset && index < offset + 8) {
-          const littleEndianBytes = new Uint8Array(new BigUint64Array([BigInt(accountDataSize)]).buffer)
+          const littleEndianBytes = new Uint8Array(new BigUint64Array([BigInt(accountDataSizes[accountIndex] || 32)]).buffer)
           return littleEndianBytes[index - offset].toString(16).padStart(2, '0')
         }
       } else if (focusedRegion === "Instruction data size") {
@@ -156,7 +189,7 @@ export default function MemoryViewer() {
       }
     }
     return (index % 256).toString(16).padStart(2, '0')
-  }, [selectedSection, focusedRegion, accountDataSize, instructionDataSize, numberOfAccounts, getRegionOffset])
+  }, [selectedSection, focusedRegion, accountDataSizes, instructionDataSize, numberOfAccounts, getRegionOffset])
 
   const getRegionColor = useCallback((byteOffset: number) => {
     if (selectedSection.name !== "Program input parameters") {
@@ -166,7 +199,7 @@ export default function MemoryViewer() {
     for (const region of programInputRegions) {
       if (byteOffset >= currentOffset && byteOffset < currentOffset + region.size) {
         if (focusedRegion) {
-          if (focusedRegion === "Account data size" && region.name === "Account data") {
+          if (focusedRegion.includes("Account data size") && region.name.includes("Account data")) {
             return region.color + " opacity-50"
           }
           if (focusedRegion === "Instruction data size" && region.name === "Instruction data") {
@@ -197,17 +230,18 @@ export default function MemoryViewer() {
       </div>
       {[...Array(COLS)].map((_, col) => {
         const byteOffset = index * COLS + col
-        const relativeOffset = byteOffset - (selectedSection.start - MEMORY_SECTIONS[0].start)
+        const hexValue = getMemoryValue(byteOffset)
+        const decimalValue = parseInt(hexValue, 16)
         return (
           <TooltipProvider key={col}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className={`w-8 p-1 text-center border border-gray-600 ${getRegionColor(byteOffset)} text-white cursor-pointer`}>
-                  {getMemoryValue(byteOffset)}
+                  {hexValue}
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Offset: +{relativeOffset}</p>
+                <p>Offset: +{decimalValue}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -239,9 +273,13 @@ export default function MemoryViewer() {
     }
   }, [focusedRegion, getRegionStartRow])
 
-  const handleAccountDataSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAccountDataSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, accountIndex: number) => {
     const value = parseInt(e.target.value, 10)
-    setAccountDataSize(isNaN(value) ? 0 : value)
+    setAccountDataSizes(prev => {
+      const newSizes = [...prev]
+      newSizes[accountIndex] = isNaN(value) ? 0 : value
+      return newSizes
+    })
   }, [])
 
   const handleInstructionDataSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,7 +289,15 @@ export default function MemoryViewer() {
 
   const handleNumberOfAccountsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10)
-    setNumberOfAccounts(isNaN(value) ? 0 : Math.min(Math.max(value, 0), 64))
+    const newNumberOfAccounts = isNaN(value) ? 0 : Math.min(Math.max(value, 0), 64)
+    setNumberOfAccounts(newNumberOfAccounts)
+    setAccountDataSizes(prev => {
+      const newSizes = [...prev]
+      while (newSizes.length < newNumberOfAccounts) {
+        newSizes.push(32)
+      }
+      return newSizes.slice(0, newNumberOfAccounts)
+    })
   }, [])
 
   const toLittleEndian = useCallback((num: number): string => {
@@ -267,7 +313,8 @@ export default function MemoryViewer() {
     <div className="container mx-auto p-4 bg-gray-900 text-white min-h-screen">
       <style jsx global>{`
         .crosshatch {
-          background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+          background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 
+          255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
           background-size: 10px 10px;
         }
       `}</style>
@@ -325,17 +372,28 @@ export default function MemoryViewer() {
               <CardTitle className="text-white">Legend</CardTitle>
             </CardHeader>
             <CardContent>
+              <Select value={selectedView} onValueChange={setSelectedView}>
+                <SelectTrigger className="w-full mb-4">
+                  <SelectValue placeholder="Select view" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Program">Program</SelectItem>
+                  {Array.from({ length: numberOfAccounts }, (_, i) => (
+                    <SelectItem key={i} value={`Account ${i + 1}`}>Account {i + 1}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Accordion type="single" collapsible onValueChange={handleAccordionChange}>
-                {programInputRegions.map((region: Region, index) => (
+                {displayedRegions.map((region: Region, index) => (
                   <AccordionItem key={index} value={region.name}>
                     <AccordionTrigger className={`p-2 ${region.isPadding ? `${region.color} crosshatch` : region.color} rounded text-gray-900`}>
                       <div className="flex justify-between w-full">
-                        <span>{region.name}</span>
+                        <span>{region.name.split(': ')[1] || region.name}</span>
                         <span className="font-mono">{region.size} bytes</span>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent>
-                      {region.name === "Number of accounts" || region.name === "Account data size" || region.name === "Instruction data size" ? (
+                      {region.name === "Number of accounts" || region.name.includes("Account data size") || region.name === "Instruction data size" ? (
                         <div className="pl-4 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-white">Decimal:</span>
@@ -343,12 +401,12 @@ export default function MemoryViewer() {
                               type="number"
                               value={
                                 region.name === "Number of accounts" ? numberOfAccounts :
-                                region.name === "Account data size" ? accountDataSize :
+                                region.name.includes("Account data size") ? accountDataSizes[parseInt(region.name.split(' ')[1]) - 1] || 32 :
                                 instructionDataSize
                               }
                               onChange={
                                 region.name === "Number of accounts" ? handleNumberOfAccountsChange :
-                                region.name === "Account data size" ? handleAccountDataSizeChange :
+                                region.name.includes("Account data size") ? (e) => handleAccountDataSizeChange(e, parseInt(region.name.split(' ')[1]) - 1) :
                                 handleInstructionDataSizeChange
                               }
                               min={0}
@@ -361,13 +419,13 @@ export default function MemoryViewer() {
                             <span className="font-mono text-white">
                               {toLittleEndian(
                                 region.name === "Number of accounts" ? numberOfAccounts :
-                                region.name === "Account data size" ? accountDataSize :
+                                region.name.includes("Account data size") ? accountDataSizes[parseInt(region.name.split(' ')[1]) - 1] || 32 :
                                 region.name === "Instruction data size" ? instructionDataSize : 0
                               )}
                             </span>
                           </div>
                         </div>
-                      ) : region.subRegions ? (
+                      ) : region.subRegions && region.subRegions.length > 0 ? (
                         <div className="pl-4">
                           {region.subRegions.map((subRegion, subIndex) => (
                             <div key={subIndex} className={`flex justify-between py-1 ${subRegion.color} rounded px-2 my-1 text-gray-900`}>
