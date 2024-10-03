@@ -223,6 +223,29 @@ export default function Component() {
     return "bg-gray-800"
   }, [selectedSection, focusedRegion, programInputRegions])
 
+  const getRegionForOffset = useCallback((byteOffset: number) => {
+    let currentOffset = 0
+    for (const region of programInputRegions) {
+      if (byteOffset >= currentOffset && byteOffset < currentOffset + region.size) {
+        return region
+      }
+      currentOffset += region.size
+    }
+    return null
+  }, [programInputRegions])
+
+  const handleMemoryClick = useCallback((byteOffset: number) => {
+    const clickedRegion = getRegionForOffset(byteOffset)
+    if (clickedRegion) {
+      const isAccountRegion = clickedRegion.name.startsWith("Account")
+      const newView = isAccountRegion ? `Account ${clickedRegion.name.split(':')[0].split(' ')[1]}` : "Program"
+      setSelectedView(newView)
+      setFocusedRegion(prevFocusedRegion => 
+        prevFocusedRegion === clickedRegion.name ? null : clickedRegion.name
+      )
+    }
+  }, [getRegionForOffset])
+
   const Row = useCallback(({ index, style }: { index: number, style: React.CSSProperties }) => (
     <div style={style} className="flex font-mono text-sm">
       <div className="w-32 p-1 text-right font-bold text-gray-400">
@@ -236,7 +259,10 @@ export default function Component() {
           <TooltipProvider key={col}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className={`w-8 p-1 text-center border border-gray-600 ${getRegionColor(byteOffset)} text-white cursor-pointer`}>
+                <div 
+                  className={`w-8 p-1 text-center border border-gray-600 ${getRegionColor(byteOffset)} text-white cursor-pointer`}
+                  onClick={() => handleMemoryClick(byteOffset)}
+                >
                   {hexValue}
                 </div>
               </TooltipTrigger>
@@ -248,7 +274,7 @@ export default function Component() {
         )
       })}
     </div>
-  ), [selectedSection, getRegionColor, getMemoryValue])
+  ), [selectedSection, getRegionColor, getMemoryValue, handleMemoryClick])
 
   const getRegionStartRow = useCallback((regionName: string) => {
     let currentOffset = 0
@@ -262,16 +288,12 @@ export default function Component() {
   }, [programInputRegions])
 
   const handleAccordionChange = useCallback((value: string) => {
-    if (value === focusedRegion) {
-      setFocusedRegion(null)
-    } else if (value) {
-      setFocusedRegion(value)
+    setFocusedRegion(value || null)
+    if (value) {
       const startRow = getRegionStartRow(value)
       listRef.current?.scrollToItem(startRow, "start")
-    } else {
-      setFocusedRegion(null)
     }
-  }, [focusedRegion, getRegionStartRow])
+  }, [getRegionStartRow])
 
   const handleAccountDataSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, accountIndex: number) => {
     const value = parseInt(e.target.value, 10)
@@ -313,8 +335,7 @@ export default function Component() {
     <div className="container mx-auto p-4 bg-gray-900 text-white min-h-screen">
       <style jsx global>{`
         .crosshatch {
-          background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 
-          255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+          background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
           background-size: 10px 10px;
         }
       `}</style>
@@ -383,7 +404,7 @@ export default function Component() {
                   ))}
                 </SelectContent>
               </Select>
-              <Accordion type="single" collapsible onValueChange={handleAccordionChange}>
+              <Accordion type="single" collapsible value={focusedRegion || ''} onValueChange={handleAccordionChange}>
                 {displayedRegions.map((region: Region, index) => (
                   <AccordionItem key={index} value={region.name}>
                     <AccordionTrigger className={`p-2 ${region.isPadding ? `${region.color} crosshatch` : region.color} rounded text-gray-900`}>
