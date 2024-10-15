@@ -47,10 +47,10 @@ const ACCOUNT_REGIONS = [
     color: "bg-green-400",
     isPadding: false,
     subRegions: [
-      { name: "Is Signer", size: 1, color: "bg-green-300" },
-      { name: "Is Writable", size: 1, color: "bg-green-400" },
-      { name: "Is Executable", size: 1, color: "bg-green-500" },
-      { name: "Is Duplicate", size: 1, color: "bg-green-600" },
+      { name: "Is Duplicate", size: 1, color: "bg-green-300" },
+      { name: "Is Signer", size: 1, color: "bg-green-400" },
+      { name: "Is Writable", size: 1, color: "bg-green-500" },
+      { name: "Is Executable", size: 1, color: "bg-green-600" },
     ]
   },
   { name: "Padding 1", size: 4, color: "bg-gray-400", isPadding: true, subRegions: [] },
