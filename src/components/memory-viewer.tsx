@@ -394,7 +394,7 @@ export default function Component() {
             </CardHeader>
             <CardContent>
               <Select value={selectedView} onValueChange={setSelectedView}>
-                <SelectTrigger className="w-full mb-4">
+                <SelectTrigger className="w-full mb-4 bg-gray-700 text-white border-gray-600 hover:bg-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                   <SelectValue placeholder="Select view" />
                 </SelectTrigger>
                 <SelectContent>
